@@ -1,0 +1,539 @@
+#!/usr/bin/env python
+
+import sys
+from utils import import_models
+import_models()
+
+from graph import Node, Graph
+from LAOStar import LAOStar
+from ILAOStar import ILAOStar
+from value_iteration import VI
+from CSSPSolver import CSSPSolver
+from grid_model import GRIDModel
+from grid_model_corridors import CORRIDORModel
+
+from RHCPSolver import *
+
+# from grid import Grid
+# # import functools
+
+# from matplotlib.collections import LineCollection, PolyCollection
+# from matplotlib.patches import Ellipse
+
+# import matplotlib.pyplot as plt
+# from mpl_toolkits.mplot3d import Axes3D
+import numpy as np
+
+import time
+import random
+import cProfile
+
+import json
+import pprint
+
+
+
+
+def test_dual_alg():
+    init_state = (0,0)
+    size = (70,70)
+    goal = (69,69)
+
+    # init_state = None
+    # size = None
+    # goal = None
+    model = GRIDModel(size, init_state, goal, prob_right_transition=0.85)#, map_file="models/grid_sutton.txt")
+
+    bound = 1
+
+    cssp_solver = CSSPSolver(model, bounds=[bound],VI_epsilon=1e-1,convergence_epsilon=1e-10)
+
+    t = time.time()
+
+    cssp_solver.solve([[0,10]])
+
+    policy = cssp_solver.algo.extract_policy()
+
+    cssp_solver.candidate_pruning = False
+
+    # try:
+    cssp_solver.incremental_update(30)
+    # except:
+    #     print(cssp_solver.candidate_set)
+    
+    k_best_solution_set = cssp_solver.k_best_solution_set
+    k = 0
+    for solution in k_best_solution_set:
+        print("-"*20)
+        k += 1
+        print("num: " + str(k))
+        print(solution[0])
+        print(solution[1])
+        # model.print_policy(solution[2])
+
+    print(time.time() - t)
+
+    print(cssp_solver.anytime_solutions)
+
+    print(model.print_policy(policy))
+
+    
+
+
+def draw_lower_envelop_multiple_bounds():
+
+    ## this is for two separate constraints
+
+    init_state = (0,0)
+    size = (5,5)
+    goal = (4,4)
+    model = GRIDModel_multiple_bounds(size, init_state, goal, prob_right_transition=0.85)
+
+    # model = LAOModel()
+
+    # algo = LAOStar(model)
+
+    alpha_1_range = list(linspace(0.0,100,20))
+    alpha_2_range = list(linspace(0.0,20,20))
+    # alpha_1_range = [46.355221667242965]
+    # alpha_2_range = [4.325548069037225]
+
+    # alpha_2_range = [20]
+
+    alpha_1_list = []
+    alpha_2_list = []
+    weighted_value_list = []
+
+    # bounds = [0.5, -0.2]
+    bounds = [1.5, 10]
+
+    for a_1 in alpha_1_range:
+        for a_2 in alpha_2_range:
+            print([a_1, a_2])
+
+            alpha_1_list.append(a_1)
+            alpha_2_list.append(a_2)
+
+            algo = LAOStar(model,constrained=True,bounds=bounds,alpha=[a_1, a_2],Lagrangian=True)
+
+            policy = algo.solve()
+
+            while policy == False:
+                algo = LAOStar(model,constrained=True,bounds=bounds,alpha=[a_1, a_2],Lagrangian=True)
+                policy = algo.solve()
+
+
+            value = algo.graph.root.value
+            weighted_value = value[0] + a_1*(value[1] - bounds[0]) + a_2*(value[2] - bounds[1])
+            weighted_value_list.append(weighted_value)
+
+
+    print(alpha_1_list)
+    print(alpha_2_list)
+    print(weighted_value_list)
+            
+    fig = plt.figure()
+    ax = Axes3D(fig)
+    
+    plt.plot(alpha_1_list,alpha_2_list, weighted_value_list,'*')
+    # plt.plot(0.15374170009084218, 9.42260840432311, 'r*')  # with bound = 1.5
+
+    plt.show()
+
+
+
+    
+
+
+def draw_lower_envelop_multiple_bounds_lb_ub():
+
+    ## this is for two separate constraints
+
+    init_state = (0,0)
+    size = (5,5)
+    goal = (4,4)
+    model = GRIDModel_multiple_bounds(size, init_state, goal, prob_right_transition=0.85)
+
+    # model = LAOModel()
+
+    # algo = LAOStar(model)
+
+    alpha_1_range = list(linspace(0.01,1.0,15))
+    alpha_2_range = list(linspace(0.01,0.3,15))
+    # alpha_2_range = [20]
+
+    alpha_1_list = []
+    alpha_2_list = []
+    weighted_value_list = []
+
+    # bounds = [0.5, -0.2]
+    bounds = [1.5, -0.9]
+
+    for a_1 in alpha_1_range:
+        for a_2 in alpha_2_range:
+            print([a_1, a_2])
+
+            alpha_1_list.append(a_1)
+            alpha_2_list.append(a_2)
+
+            algo = LAOStar(model,constrained=True,bounds=bounds,alpha=[a_1, a_2],Lagrangian=True)
+
+            policy = algo.solve()
+
+            # while policy == False:
+            #     algo = LAOStar(model,constrained=True,bounds=bounds,alpha=[a_1, a_2],Lagrangian=True)
+            #     policy = algo.solve()
+
+            if policy == None:
+                weighted_value = -200
+                weighted_value_list.append(weighted_value)
+                print("seems unbounded below")
+
+            else:
+                
+                value = algo.graph.root.value
+                weighted_value = value[0] + a_1*(value[1] - bounds[0]) + a_2*(value[2] - bounds[1])
+                weighted_value_list.append(weighted_value)
+
+
+
+    # min_val = 100000000
+    # max_val = -10000000
+    # for v in weighted_value_list:
+    #     if v==-200:
+    #         continue
+    #     if v < min_val:
+    #         min_val = v
+    #     if v > max_val:
+    #         max_val = v
+
+    # diff = max_val - min_val
+
+    # for i in range(len(weighted_value_list)):
+    #     if weighted_value_list[i]<0:
+    #         weighted_value_list[i] = 8.2
+            
+
+    print(alpha_1_list)
+    print(alpha_2_list)
+    print(weighted_value_list)
+            
+    fig = plt.figure()
+    ax = Axes3D(fig)
+    
+    plt.plot(alpha_1_list,alpha_2_list, weighted_value_list,'*')
+    # plt.plot(0.15374170009084218, 9.42260840432311, 'r*')  # with bound = 1.5
+    ax.axes.set_zlim3d(bottom=9.0, top=9.4) 
+
+    plt.show()
+
+
+
+
+def corridor_model_test():
+
+    init_state = None
+    size = None
+    goal = None
+    model = CORRIDORModel(init_state, size, goal, map_file="models/grid_model_corridors.txt")
+
+    print(model.init_state)
+    print(model.pos_list)
+    print(model.constrained_pos_list)
+    print(model.goal_pos)
+    print(model.doors_pos_list)
+
+
+    print(model.state_transitions(model.init_state, 'D'))
+    print("-"*20)
+    print(model.state_transitions(model.init_state, 'O_1'))
+    print("-"*20)
+    print(model.actions((5,9,"U","U","U","U")))
+    print(model.state_transitions((5,9,"U","U","U","U"), 'O_4'))
+    print("-"*20)
+    print(model.state_transitions((5,9,"U","U","U","O"), 'R'))
+    print("-"*20)
+    print(model.state_transitions((5,9,"U","U","U","C"), 'R'))
+
+
+
+def test_corridor_model():
+
+    init_state = None
+    size = None
+    goal = None
+    model = CORRIDORModel(init_state, size, goal, map_file="models/grid_model_corridors_large.txt")
+
+    bound = 0.1
+
+    cssp_solver = CSSPSolver(model, bounds=[bound],VI_epsilon=1e-1,convergence_epsilon=1e-10)
+
+    t = time.time()
+
+    cssp_solver.solve([[0,10]])
+
+    policy = cssp_solver.algo.extract_policy()
+
+    cssp_solver.candidate_pruning = False
+
+    # try:
+    cssp_solver.incremental_update(3)
+    # except:
+    #     print(cssp_solver.candidate_set)
+    
+    k_best_solution_set = cssp_solver.k_best_solution_set
+    k = 0
+    for solution in k_best_solution_set:
+        print("-"*20)
+        k += 1
+        print("num: " + str(k))
+        print(solution[0])
+        print(solution[1])
+        # model.print_policy(solution[2])
+
+    print(time.time() - t)
+
+    print(cssp_solver.anytime_solutions)
+
+    # print(policy)
+    # print(model.print_policy(policy))
+
+
+def RHCPSolver_test():
+
+    t = time.time()
+
+    episode_dict = {'episode_1': {'file_name' : "models/evacuation_2_4/evacuation_2_episode_1.txt",
+                                  'likelihood': 1.0},
+                    'episode_2': {'file_name' : "models/evacuation_2_4/evacuation_2_episode_2.txt",
+                                  'likelihood': 1.0},
+                    'episode_3': {'file_name' : "models/evacuation_2_4/evacuation_2_episode_3.txt",
+                                  'likelihood': 0.9},
+                    'episode_4': {'file_name' : "models/evacuation_2_4/evacuation_2_episode_4.txt",
+                                  'likelihood': 0.1},
+                    'episode_5': {'file_name' : "models/evacuation_2_4/evacuation_2_episode_5.txt",
+                                  'likelihood': 0.1},
+                    'episode_6': {'file_name' : "models/evacuation_2_4/evacuation_2_episode_5.txt",
+                                  'likelihood': 1.0}}
+                    
+
+    solver = RHCPSolver(episode_dict, bound=0.1)
+    try:
+        solver.solve()
+    except:
+        print(solver.global_lb_list)
+        print(solver.global_ub_list)
+
+    print(time.time() - t)
+
+    # pprint.pprint(solver.partition.partition)
+
+    print("------------------")
+
+    time.sleep(100)
+
+    solver.partition.refine_partition()
+    pprint.pprint(solver.partition.partition)
+    print(len(solver.partition.partition))
+
+
+
+def RHCPSolver_test_2():
+
+    t = time.time()
+
+    episode_dict = {'episode_1': {'file_name' : "models/evacuation_7/evacuation_3_episode_1.txt",
+                                  'likelihood': 1.0},
+                    'episode_2': {'file_name' : "models/evacuation_7/evacuation_3_episode_2.txt",
+                                  'likelihood': 1.0},
+                    'episode_3': {'file_name' : "models/evacuation_7/evacuation_3_episode_3.txt",
+                                  'likelihood': 1.0},
+                    'episode_4': {'file_name' : "models/evacuation_7/evacuation_3_episode_4.txt",
+                                  'likelihood': 1.0},
+                    'episode_5': {'file_name' : "models/evacuation_7/evacuation_3_episode_5.txt",
+                                  'likelihood': 1.0},
+                    'episode_6': {'file_name' : "models/evacuation_7/evacuation_3_episode_6.txt",
+                                  'likelihood': 1.0},
+                    'episode_7': {'file_name' : "models/evacuation_7/evacuation_3_episode_7.txt",
+                                  'likelihood': 1.0},
+                    'episode_8': {'file_name' : "models/evacuation_7/evacuation_3_episode_8.txt",
+                                  'likelihood': 1.0},
+                    'episode_9': {'file_name' : "models/evacuation_7/evacuation_3_episode_9.txt",
+                                  'likelihood': 0.99},
+                    'episode_10': {'file_name' : "models/evacuation_7/evacuation_3_episode_10.txt",
+                                  'likelihood': 0.01},
+                    'episode_11': {'file_name' : "models/evacuation_7/evacuation_3_episode_11.txt",
+                                   'likelihood': 0.99},
+                    'episode_12': {'file_name' : "models/evacuation_7/evacuation_3_episode_12.txt",
+                                   'likelihood': 0.99},
+                    'episode_13': {'file_name' : "models/evacuation_7/evacuation_3_episode_13.txt",
+                                   'likelihood': 0.99*0.01},
+                    'episode_14': {'file_name' : "models/evacuation_7/evacuation_3_episode_14.txt",
+                                   'likelihood': 0.99*0.99}
+                    }
+                    
+
+    
+    solver = RHCPSolver(episode_dict, bound=100)
+    try:
+        solver.solve()
+    except:# Exception as e: 
+        print(solver.global_lb_list)
+        print(solver.global_ub_list)
+        print(solver.count)
+
+    print(time.time() - t)
+
+    # pprint.pprint(solver.partition.partition)
+
+    # print("------------------")
+
+    # time.sleep(100)
+
+    # solver.partition.refine_partition()
+    # pprint.pprint(solver.partition.partition)
+    # print(len(solver.partition.partition))
+
+
+
+
+
+def routing_RHCPSolver_test():
+
+    t = time.time()
+
+
+    init_state_1 = ((0,0),(5,5))
+    size_1 = (8,8)
+    goal_1 = (7,5)
+    obs_dir_1 = ['L']
+    obs_boundary_1 = [(2,1)]
+    prob_right_transition_1 = 0.9
+
+    init_state_2 = ((0,7),(6,12))
+    size_2 = (10,10)
+    goal_2 = (9,5)
+    obs_dir_2 = ['D']
+    obs_boundary_2 = [(2,1)]
+    prob_right_transition_2 = 0.9
+
+    init_state_3 = ((0,10),(8,5))
+    size_3 = (12,12)
+    goal_3 = (11,10)
+    obs_dir_3 = ['U']
+    obs_boundary_3 = [(2,1)]
+    prob_right_transition_3 = 0.9
+
+    init_state_4 = ((1,5),(8,5))
+    size_4 = (8,8)
+    goal_4 = (7,1)
+    obs_dir_4 = ['L']
+    obs_boundary_4 = [(2,1)]
+    prob_right_transition_4 = 0.9
+
+    init_state_5 = ((0,0),(1,5))
+    size_5 = (8,8)
+    goal_5 = (7,7)
+    obs_dir_5 = ['R']
+    obs_boundary_5 = [(2,1)]
+    prob_right_transition_5 = 0.9
+
+    episode_dict = {'episode_1': {'scenario_dict' : {'size':size_1, 'obs_dir':obs_dir_1,
+                                                     'obs_boundary':obs_boundary_1, 'init_state':init_state_1,
+                                                     'goal':goal_1, 'prob_right_transition':prob_right_transition_1},
+                                  'likelihood': 1.0},
+                    'episode_2': {'scenario_dict' : {'size':size_2, 'obs_dir':obs_dir_2,
+                                                     'obs_boundary':obs_boundary_2, 'init_state':init_state_2,
+                                                     'goal':goal_2, 'prob_right_transition':prob_right_transition_2},
+                                  'likelihood': 1.0},
+                    'episode_3': {'scenario_dict' : {'size':size_3, 'obs_dir':obs_dir_3,
+                                                     'obs_boundary':obs_boundary_3, 'init_state':init_state_3,
+                                                     'goal':goal_3, 'prob_right_transition':prob_right_transition_3},
+                                  'likelihood': 1.0},
+                    'episode_4': {'scenario_dict' : {'size':size_4, 'obs_dir':obs_dir_4,
+                                                     'obs_boundary':obs_boundary_4, 'init_state':init_state_4,
+                                                     'goal':goal_4, 'prob_right_transition':prob_right_transition_4},
+                                  'likelihood': 1.0},
+                    'episode_5': {'scenario_dict' : {'size':size_5, 'obs_dir':obs_dir_5,
+                                                     'obs_boundary':obs_boundary_5, 'init_state':init_state_5,
+                                                     'goal':goal_5, 'prob_right_transition':prob_right_transition_5},
+                                  'likelihood': 0.1}
+                    }
+                    
+
+    
+    solver = RHCPSolver(episode_dict, bound=0.05)
+    try:
+        solver.solve()
+    except:# Exception as e:
+        # print(e)
+        print(solver.global_lb_list)
+        print(solver.global_ub_list)
+        print(solver.count)
+
+    print(time.time() - t)
+
+    # pprint.pprint(solver.partition.partition)
+
+    # print("------------------")
+
+    # time.sleep(100)
+
+    # solver.partition.refine_partition()
+    # pprint.pprint(solver.partition.partition)
+    # print(len(solver.partition.partition))
+    
+
+
+
+def partitioning_test():
+
+    episode_1 = Episode('ep1', None)
+    episode_2 = Episode('ep2', None)
+
+    episode_1.lb = 0.0
+    episode_1.ub = 1.0
+
+    episode_2.lb = 0.0
+    episode_2.ub = 1.0
+
+    episodes = [episode_1, episode_2]
+
+    partition = Partition(episodes)
+
+    pprint.pprint(partition.partition)
+
+    new_bounds = partition.refine_subset(partition.partition[0])
+
+    pprint.pprint(new_bounds)
+
+    pprint.pprint(partition.partition)
+
+    print("------------------")
+
+    partition.refine_partition()
+    pprint.pprint(partition.partition)
+
+    print("------------------")
+
+    partition.refine_partition()
+    pprint.pprint(partition.partition)
+
+    print("------------------")
+
+    partition.refine_partition()
+    pprint.pprint(partition.partition)
+
+
+# test_dual_alg()
+
+# corridor_model_test()
+
+# test_corridor_model()
+
+
+# RHCPSolver_test()
+# RHCPSolver_test_2()
+routing_RHCPSolver_test()
+
+# partitioning_test()
